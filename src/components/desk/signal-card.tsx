@@ -22,20 +22,38 @@ function body(signal: Signal) {
   return `${cut.slice(0, 900).trim()}…`;
 }
 
+function newAge(signal: Signal, scanGen: number, firstSeen: Record<string, number>) {
+  const born = firstSeen[signal.id];
+  if (born === undefined) return null;
+  return scanGen - born;
+}
+
+const NEW_TONE: Record<number, string> = {
+  0: "bg-up/15 text-up",
+  1: "bg-down/15 text-down",
+  2: "bg-secondary text-muted-foreground",
+};
+
 export function SignalCard({
   signal,
   selected,
   fresh,
+  scanGen,
+  firstSeen,
   onSelect,
 }: {
   signal: Signal;
   selected: boolean;
   fresh?: boolean;
+  scanGen?: number;
+  firstSeen?: Record<string, number>;
   onSelect: () => void;
 }) {
   const handle = signal.author.startsWith("@") ? signal.author : `@${signal.author}`;
   const name = signal.source === "github" ? signal.title : handle.replace(/^@/, "");
   const jev = Math.round(signal.composite * 100);
+  const age = newAge(signal, scanGen ?? 0, firstSeen ?? {});
+  const newClass = age === 0 || age === 1 || age === 2 ? NEW_TONE[age] : null;
   const stats = [
     signal.source === "x" && compact(signal.stats.replies) ? `${compact(signal.stats.replies)} replies` : null,
     signal.source === "x" && compact(signal.stats.reposts) ? `${compact(signal.stats.reposts)} reposts` : null,
@@ -69,7 +87,19 @@ export function SignalCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium">{name}</p>
+              <div className="flex min-w-0 items-center gap-1.5">
+                <p className="truncate text-sm font-medium">{name}</p>
+                {newClass ? (
+                  <span
+                    className={cn(
+                      "shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                      newClass,
+                    )}
+                  >
+                    New
+                  </span>
+                ) : null}
+              </div>
               <p className="truncate text-xs text-muted-foreground">
                 {handle}
                 {signal.createdAt ? ` · ${when(signal.createdAt)}` : ""}
@@ -78,9 +108,7 @@ export function SignalCard({
             </div>
             <p className="shrink-0 text-xs tabular-nums text-muted-foreground">Jev {jev}</p>
           </div>
-          <p className="mt-2 text-base font-medium leading-snug break-any">
-            {signal.soWhat || signal.reason}
-          </p>
+          <p className="mt-2 text-base font-medium leading-snug break-any">{signal.soWhat || signal.reason}</p>
           <p className="mt-2 whitespace-pre-wrap break-any text-sm leading-snug text-muted-foreground">{body(signal)}</p>
           <PostImages urls={signal.imageUrls} />
           {stats.length ? (

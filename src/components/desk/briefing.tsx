@@ -43,7 +43,7 @@ export function Briefing() {
   if (trends.length) {
     return (
       <div className="px-4 pb-3">
-        <p className="text-xs font-medium text-muted-foreground">10 xu hướng</p>
+        <p className="text-xs font-medium text-jev">10 xu hướng</p>
         <ol className="mt-1.5 space-y-1">
           {trends.slice(0, 10).map((trend, i) => {
             const on = trend.id === activeTrendId;
@@ -60,14 +60,14 @@ export function Briefing() {
                       setActiveTrend(on ? null : trend.id);
                     }}
                     className={cn(
-                      "flex min-h-11 min-w-0 flex-1 gap-2 py-1.5 text-left text-sm leading-snug",
+                      "flex min-h-11 min-w-0 flex-1 gap-2 py-1.5 text-left text-sm leading-snug text-jev",
                       on && "font-medium",
                     )}
                   >
-                    <span className="w-4 shrink-0 tabular-nums text-muted-foreground">{i + 1}.</span>
+                    <span className="w-4 shrink-0 tabular-nums text-jev">{i + 1}.</span>
                     <span className="min-w-0 flex-1 break-any">
                       {trend.title}
-                      <span className="text-muted-foreground"> · {trend.signalIds.length}</span>
+                      <span className="opacity-60"> · {trend.signalIds.length}</span>
                     </span>
                   </button>
                   <button
@@ -78,7 +78,7 @@ export function Briefing() {
                   >
                     <span
                       className={cn(
-                        "font-display text-base font-semibold leading-none",
+                        "font-display text-base font-semibold leading-none text-jev",
                         loading && "animate-pulse",
                         grokOpen && "underline",
                       )}
@@ -106,11 +106,11 @@ export function Briefing() {
   if (!briefing.length) return null;
   return (
     <div className="px-4 pb-3">
-      <p className="text-xs font-medium text-muted-foreground">Lần này</p>
+      <p className="text-xs font-medium text-jev">Lần này</p>
       <ul className="mt-1.5 space-y-1.5">
         {briefing.slice(0, 10).map((line) => (
-          <li key={line} className="flex gap-2 text-sm leading-snug">
-            <span className="mt-2 size-1 shrink-0 rounded-full bg-foreground" />
+          <li key={line} className="flex gap-2 text-sm leading-snug text-jev">
+            <span className="mt-2 size-1 shrink-0 rounded-full bg-jev" />
             <span className="min-w-0 break-any">{line}</span>
           </li>
         ))}

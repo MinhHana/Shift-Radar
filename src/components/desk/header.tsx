@@ -1,6 +1,6 @@
-import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/desk/avatar";
+import { JevLogo } from "@/components/desk/jev-logo";
 import { runLiveScan } from "@/lib/signals/live-scan";
 import { useDesk } from "@/lib/signals/store";
 
@@ -11,14 +11,19 @@ function LiveTape() {
   if (!scanning && !status) return null;
 
   return (
-    <div className="mt-3 flex min-h-11 items-center gap-3">
+    <div className="mt-3 flex min-h-11 items-center gap-3 overflow-visible">
       {current ? (
-        <Avatar source={current.source} author={current.author} src={current.avatarUrl} size="sm" />
+        <span className="relative shrink-0">
+          <Avatar source={current.source} author={current.author} src={current.avatarUrl} size="sm" />
+          <span className="absolute -bottom-0.5 -right-0.5">
+            <JevLogo scoring size="sm" />
+          </span>
+        </span>
       ) : (
-        <span className="jev-on-dot size-2 shrink-0 rounded-full bg-up" />
+        <JevLogo scoring={scanning} size="sm" />
       )}
       <div className="min-w-0">
-        <p className="truncate text-sm font-medium">{status || "Scanning"}</p>
+        <p className="truncate text-sm font-medium text-jev">{status || "Scanning"}</p>
         {current ? <p className="truncate text-xs text-muted-foreground">{current.title}</p> : null}
       </div>
     </div>
@@ -52,8 +57,8 @@ export function Composer() {
           aria-label="Scan focus"
         />
         <Button onClick={() => void runLiveScan()} disabled={scanning} className="h-11 min-w-16 shrink-0 px-4">
-          {scanning ? <Loader2 className="animate-spin" /> : null}
-          {scanning ? "…" : "Scan"}
+          {scanning ? <JevLogo scoring size="sm" /> : null}
+          {scanning ? "" : "Scan"}
         </Button>
       </div>
       <LiveTape />

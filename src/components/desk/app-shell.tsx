@@ -1,11 +1,13 @@
 import { useLayoutEffect, useMemo, useRef, useState, useEffect } from "react";
 import { ChevronUp, Radar } from "lucide-react";
+import { Avatar } from "@/components/desk/avatar";
 import { Briefing } from "@/components/desk/briefing";
 import { EmptyRadar } from "@/components/desk/empty-radar";
 import { FilterBar } from "@/components/desk/filters";
 import { FloorHero } from "@/components/desk/floor-hero";
 import { Composer } from "@/components/desk/header";
 import { Inspector } from "@/components/desk/inspector";
+import { JevLogo } from "@/components/desk/jev-logo";
 import { SettingsSheet } from "@/components/desk/settings-sheet";
 import { SignalCard } from "@/components/desk/signal-card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -37,6 +39,8 @@ export function AppShell() {
   const warnings = useDesk((s) => s.warnings);
   const key = useDesk((s) => s.typesafeKey);
   const lastArrivedId = useDesk((s) => s.lastArrivedId);
+  const scanGen = useDesk((s) => s.scanGen);
+  const firstSeen = useDesk((s) => s.firstSeen);
   const liveCurrent = useDesk((s) => s.liveCurrent);
   const trends = useDesk((s) => s.trends);
   const activeTrendId = useDesk((s) => s.activeTrendId);
@@ -132,16 +136,26 @@ export function AppShell() {
                 signal={signal}
                 selected={signal.id === selectedId}
                 fresh={signal.id === lastArrivedId}
+                scanGen={scanGen}
+                firstSeen={firstSeen}
                 onSelect={() => select(signal.id)}
               />
             ))}
             {scanning && liveCurrent ? (
-              <div className="flex gap-3 border-b border-border px-4 py-3">
-                <Skeleton className="size-10 shrink-0 rounded-full" />
-                <div className="min-w-0 flex-1 space-y-2">
+              <div className="jev-score-row flex gap-3 border-b border-border px-4 py-3">
+                <span className="relative shrink-0">
+                  <Avatar source={liveCurrent.source} author={liveCurrent.author} src={liveCurrent.avatarUrl} />
+                  <span className="absolute -bottom-1 -right-1">
+                    <JevLogo scoring size="sm" />
+                  </span>
+                </span>
+                <div className="min-w-0 flex-1 space-y-1">
                   <p className="truncate text-sm font-medium">{liveCurrent.author}</p>
                   <p className="truncate text-sm text-muted-foreground">{liveCurrent.title}</p>
-                  <p className="text-xs text-muted-foreground">Jev scoring…</p>
+                  <p className="flex items-center gap-1.5 text-xs text-up">
+                    <span className="font-display font-semibold">Jev</span>
+                    scoring…
+                  </p>
                 </div>
               </div>
             ) : null}

@@ -25,6 +25,8 @@ type DeskState = {
   liveStatus: string;
   liveCurrent: LiveCurrent | null;
   lastArrivedId: string | null;
+  scanGen: number;
+  firstSeen: Record<string, number>;
   theme: "light" | "dark";
   briefing: string[];
   trends: Trend[];
@@ -77,6 +79,8 @@ export const useDesk = create<DeskState>()(
       liveStatus: "",
       liveCurrent: null,
       lastArrivedId: null,
+      scanGen: 0,
+      firstSeen: {},
       theme: "light",
       briefing: [],
       trends: [],
@@ -90,7 +94,7 @@ export const useDesk = create<DeskState>()(
       select: (selectedId) => set({ selectedId }),
       setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
       beginLiveScan: () =>
-        set({
+        set((s) => ({
           isScanning: true,
           error: null,
           warnings: [],
@@ -100,7 +104,8 @@ export const useDesk = create<DeskState>()(
           liveCurrent: null,
           tab: "all",
           stats: { xFetched: 0, githubFetched: 0, scored: 0, kept: 0 },
-        }),
+          scanGen: s.scanGen + 1,
+        })),
       setLive: (liveStatus, liveCurrent) =>
         set((s) => ({
           liveStatus,
@@ -113,6 +118,9 @@ export const useDesk = create<DeskState>()(
           return {
             signals,
             lastArrivedId: signal.kept ? signal.id : s.lastArrivedId,
+            firstSeen: s.firstSeen[signal.id]
+              ? s.firstSeen
+              : { ...s.firstSeen, [signal.id]: s.scanGen || 1 },
             stats: {
               ...stats,
               scored: stats.scored + 1,
@@ -187,6 +195,8 @@ export const useDesk = create<DeskState>()(
         activeTrendId: s.activeTrendId,
         trendNotes: s.trendNotes,
         extraVoices: s.extraVoices,
+        scanGen: s.scanGen,
+        firstSeen: s.firstSeen,
       }),
     },
   ),
