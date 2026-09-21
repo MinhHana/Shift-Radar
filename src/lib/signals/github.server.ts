@@ -1,4 +1,5 @@
 import type { RawItem } from "./types";
+import { harvestImageUrls, readmeImages } from "./media";
 
 type Repo = {
   full_name: string;
@@ -11,21 +12,22 @@ type Repo = {
   pushed_at: string;
   updated_at: string;
   topics?: string[];
-  owner?: { login: string };
+  owner?: { login: string; avatar_url?: string };
 };
 
 async function gh(path: string): Promise<Response> {
-  return fetch(`https://api.github.com${path}`, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      "User-Agent": "ShiftRadar/1.0",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-  });
+  const token = process.env.GITHUB_TOKEN?.trim();
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github+json",
+    "User-Agent": "ShiftRadar/1.0",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return fetch(`https://api.github.com${path}`, { headers });
 }
 
-async function search(q: string): Promise<Repo[]> {
-  const url = `/search/repositories?q=${encodeURIComponent(q)}&sort=updated&order=desc&per_page=8`;
+async function search(q: string, sort: "updated" | "stars" = "stars"): Promise<Repo[]> {
+  const url = `/search/repositories?q=${encodeURIComponent(q)}&sort=${sort}&order=desc&per_page=8`;
   const res = await gh(url);
   if (!res.ok) return [];
   const json = (await res.json()) as { items?: Repo[] };
@@ -58,18 +60,19 @@ export async function fetchGithubSignals(focus?: string): Promise<{ items: RawIt
   const extra = focus?.trim() ? `${focus.trim()} ` : "";
 
   const queries = [
-    `${extra}created:>${created} (LLM OR "language model" OR "coding agent" OR "system one" OR typesafe) stars:>=1`,
-    `${extra}pushed:>${pushed} (dspy OR baml OR MCP OR "structured output" OR harness OR jev)`,
-    `${extra}created:>${created} topic:llm`,
-    `pushed:>${pushed} (inference OR "open weights" OR "diffusion language") language:Python`,
+    `${extra}created:>${created} (LLM OR "coding agent" OR MCP OR harness) stars:>=8`,
+    `${extra}created:>${created} topic:llm stars:>=12`,
+    `${extra}pushed:>${pushed} (vllm OR sglang OR llama.cpp) stars:>=15`,
+    `${extra}created:>${isoDaysAgo(10)} ("eval" OR judge OR "structured output") stars:>=8`,
+    `${extra}created:>${isoDaysAgo(14)} (MCP OR "coding agent" OR eval OR harness) stars:1..25`,
   ];
 
   const found: Repo[] = [];
   const seen = new Set<string>();
   let rateLimited = false;
 
-  for (const q of queries) {
-    const repos = await search(q);
+  for (const [i, q] of queries.entries()) {
+    const repos = await search(q, i === 2 ? "updated" : "stars");
     if (!repos.length) {
       // Distinguish empty vs failure only loosely
     }
@@ -94,11 +97,12 @@ export async function fetchGithubSignals(focus?: string): Promise<{ items: RawIt
     }
   }
 
-  const picked = found.slice(0, 10);
+  const picked = found.slice(0, 12);
   const items: RawItem[] = [];
 
   for (const repo of picked) {
-    const excerpt = await readmeExcerpt(repo.full_name);
+    const thin = !(repo.description && repo.description.length > 40);
+    const excerpt = thin && items.length < 3 ? await readmeExcerpt(repo.full_name) : "";
     const topics = (repo.topics ?? []).join(", ");
     const desc = repo.description || "No description.";
     items.push({
@@ -116,8 +120,12 @@ export async function fetchGithubSignals(focus?: string): Promise<{ items: RawIt
         .join("\n\n"),
       url: repo.html_url,
       author: repo.owner?.login ? `@${repo.owner.login}` : repo.full_name.split("/")[0],
+      avatarUrl: repo.owner?.avatar_url || (repo.owner?.login ? `https://github.com/${repo.owner.login}.png?size=80` : undefined),
       createdAt: repo.pushed_at || repo.updated_at || repo.created_at,
-      language: repo.language ?? undefined,
+      imageUrls: harvestImageUrls(
+        `https://opengraph.githubassets.com/1/${repo.full_name}`,
+        excerpt ? readmeImages(excerpt) : [],
+      ),
       stats: {
         stars: repo.stargazers_count,
         forks: repo.forks_count,

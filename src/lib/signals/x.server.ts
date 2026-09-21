@@ -1,5 +1,9 @@
 import { asNumber, asString, extractJson } from "./parse";
+import { harvestImageUrls, imagesFromRow } from "./media";
 import type { RawItem } from "./types";
+import { X_LANES, type XLaneId } from "./x-lanes";
+
+export type XWindow = "recent" | "quarter";
 
 type GrokOutput =
   | string
@@ -11,20 +15,25 @@ type GrokOutput =
 
 function collectText(body: Record<string, unknown>): string {
   const chunks: string[] = [];
-  if (typeof body.output_text === "string") chunks.push(body.output_text);
-  const output = body.output as GrokOutput | undefined;
-  if (typeof output === "string") chunks.push(output);
-  if (Array.isArray(output)) {
-    for (const item of output) {
-      if (typeof item.text === "string") chunks.push(item.text);
-      if (typeof item.content === "string") chunks.push(item.content);
-      if (Array.isArray(item.content)) {
-        for (const c of item.content) {
-          if (typeof c?.text === "string") chunks.push(c.text);
-        }
+  const pushFrom = (item: { text?: string; content?: Array<{ type?: string; text?: string }> | string }) => {
+    if (typeof item.text === "string") chunks.push(item.text);
+    if (typeof item.content === "string") chunks.push(item.content);
+    if (Array.isArray(item.content)) {
+      for (const c of item.content) {
+        if (typeof c?.text === "string") chunks.push(c.text);
       }
     }
+  };
+
+  const output = body.output as GrokOutput | undefined;
+  if (Array.isArray(output)) {
+    const messages = output.filter((item) => item && (item as { type?: string }).type === "message");
+    const pick = messages.length ? messages.slice(-1) : output;
+    for (const item of pick) pushFrom(item);
+  } else if (typeof output === "string") {
+    chunks.push(output);
   }
+  if (typeof body.output_text === "string") chunks.push(body.output_text);
   const choices = body.choices as Array<{ message?: { content?: unknown } }> | undefined;
   const content = choices?.[0]?.message?.content;
   if (typeof content === "string") chunks.push(content);
@@ -34,14 +43,9 @@ function collectText(body: Record<string, unknown>): string {
 function collectUrls(body: Record<string, unknown>): string[] {
   const urls = new Set<string>();
   const citations = body.citations;
-  if (Array.isArray(citations)) {
-    for (const c of citations) {
-      if (typeof c === "string" && /x\.com|twitter\.com/.test(c)) urls.add(c);
-      if (c && typeof c === "object") {
-        const u = (c as { url?: string }).url;
-        if (u && /x\.com|twitter\.com/.test(u)) urls.add(u);
-      }
-    }
+  const blob = `${typeof body.output_text === "string" ? body.output_text : ""}${JSON.stringify(citations ?? [])}`;
+  for (const m of blob.matchAll(/https:\/\/(?:x|twitter)\.com\/[^/"'\s\\]+\/status\/\d+/g)) {
+    urls.add(m[0].replace(/\\+$/, ""));
   }
   return [...urls];
 }
@@ -65,8 +69,10 @@ function itemsFromUnknown(data: unknown, citationUrls: string[]): RawItem[] {
     const url = asString(r.post_url || r.url || r.link);
     const id = statusId(url) ?? asString(r.id) ?? `x-${out.length}`;
     const text = asString(r.text || r.content || r.body);
-    const handle = asString(r.author_handle || r.handle || r.author).replace(/^@/, "");
-    if (!text && !url) continue;
+    const handle = asString(r.author_handle || r.handle || r.author).replace(/^@+/, "");
+    const avatar = asString(r.avatar_url || r.profile_image_url || r.author_avatar);
+    const imageUrls = harvestImageUrls(imagesFromRow(r), text);
+    if (!text && !url && !imageUrls.length) continue;
     out.push({
       id: `x:${id}`,
       source: "x",
@@ -74,7 +80,9 @@ function itemsFromUnknown(data: unknown, citationUrls: string[]): RawItem[] {
       text: text || url,
       url: url || `https://x.com/${handle}`,
       author: handle ? `@${handle}` : asString(r.author_name) || "X",
+      avatarUrl: avatar || (handle ? `https://unavatar.io/twitter/${encodeURIComponent(handle)}` : undefined),
       createdAt: asString(r.created_at || r.date) || new Date().toISOString(),
+      imageUrls,
       stats: {
         likes: asNumber(r.likes ?? r.favorite_count),
         reposts: asNumber(r.reposts ?? r.retweets ?? r.retweet_count),
@@ -86,16 +94,19 @@ function itemsFromUnknown(data: unknown, citationUrls: string[]): RawItem[] {
 
   if (!out.length && citationUrls.length) {
     citationUrls.slice(0, 12).forEach((url, i) => {
-      const id = statusId(url) ?? String(i);
+      const sid = statusId(url) ?? String(i);
       const handle = url.match(/(?:x\.com|twitter\.com)\/([^/]+)/)?.[1] ?? "unknown";
+      if (handle === "i" || handle === "intent") return;
       out.push({
-        id: `x:${id}`,
+        id: `x:${sid}`,
         source: "x",
         title: `Signal from @${handle}`,
         text: `Post on X: ${url}`,
         url,
         author: `@${handle}`,
+        avatarUrl: `https://unavatar.io/twitter/${encodeURIComponent(handle)}`,
         createdAt: new Date().toISOString(),
+        imageUrls: [],
         stats: {},
       });
     });
@@ -109,17 +120,78 @@ function itemsFromUnknown(data: unknown, citationUrls: string[]): RawItem[] {
   });
 }
 
-const SYSTEM = `You retrieve AI signals from X for a working software/ML engineer.
-Return ONLY JSON: {"items":[{...}]}.
-Each item: post_url, author_handle, author_name, text, created_at (ISO), likes, reposts, replies, views, mentioned_urls.
-Rules:
-- Prefer NEW artifacts: primitives, papers, repos, CLI/API updates, training methods, agents, evals.
-- INCLUDE closed AND open source.
-- INCLUDE posts with low engagement if the substance might matter. Popularity is not a filter.
-- INCLUDE Grok Build CLI / xAI / TypeSafe / Jev / System One if anything new exists.
-- Max 14 items. Real x.com status URLs only. No invented URLs.`;
+function daysAgo(n: number) {
+  return new Date(Date.now() - n * 24 * 3600 * 1000).toISOString().slice(0, 10);
+}
 
-export async function fetchXSignals(focus?: string): Promise<{ items: RawItem[]; warning?: string }> {
+async function searchX(opts: {
+  apiKey: string;
+  fromDate: string;
+  toDate?: string;
+  user: string;
+  searches: number;
+  timeoutMs: number;
+}): Promise<{ items: RawItem[]; warning?: string }> {
+  const system = `You retrieve AI signals from X for a software/ML engineer who does not have time to scroll.
+Return ONLY JSON: {"items":[{post_url,author_handle,author_name,avatar_url,text,created_at,likes,reposts,replies,views,image_urls}]}.
+Rules: real x.com status URLs only; do at most ${opts.searches} X searches then answer immediately; max 10 items.
+FULL briefing: popular shipping updates AND under-discussed high-impact artifacts.
+Prefer an artifact: version, paper, repo, API/CLI, weights. Skip jokes and recaps.
+image_urls: pbs.twimg.com photo URLs, or [].`;
+
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), opts.timeoutMs);
+  const tool: { type: "x_search"; from_date: string; to_date?: string } = {
+    type: "x_search",
+    from_date: opts.fromDate,
+  };
+  if (opts.toDate) tool.to_date = opts.toDate;
+  try {
+    const res = await fetch("https://api.x.ai/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${opts.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      signal: ac.signal,
+      body: JSON.stringify({
+        model: "grok-4-fast",
+        input: [
+          { role: "system", content: system },
+          { role: "user", content: opts.user },
+        ],
+        tools: [{ ...tool, enable_image_understanding: false }],
+        max_output_tokens: 1800,
+      }),
+    });
+    if (!res.ok) {
+      return { items: [], warning: `X search error ${res.status}.` };
+    }
+    const body = (await res.json()) as Record<string, unknown>;
+    const text = collectText(body);
+    const urls = collectUrls(body);
+    const parsed = extractJson(text);
+    const items = itemsFromUnknown(parsed, urls).slice(0, 10);
+    for (const item of items) {
+      if (item.imageUrls?.length) continue;
+      item.imageUrls = harvestImageUrls(item.text, text);
+    }
+    if (!items.length) return { items: [], warning: "Grok returned no X posts." };
+    return { items };
+  } catch (err) {
+    const timed = err instanceof Error && (err.name === "AbortError" || /aborted|timeout/i.test(err.message));
+    return { items: [], warning: timed ? "X search timed out." : "Could not run X search." };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function fetchXSignals(
+  focus?: string,
+  window: XWindow = "recent",
+  laneId?: string,
+  extraVoices: string[] = [],
+): Promise<{ items: RawItem[]; warning?: string }> {
   const apiKey = process.env.XAI_API_KEY?.trim();
   if (!apiKey) return { items: [], warning: "Missing xAI key — cannot scan X." };
 
@@ -127,94 +199,50 @@ export async function fetchXSignals(focus?: string): Promise<{ items: RawItem[];
     ? `Extra focus from the user (still apply the engineer/research filter): ${focus.trim()}`
     : "No extra focus.";
 
-  const user = `${focusLine}
+  const userFor = (brief: string) => `${focusLine}
 
-Search X for the last 14 days. Find signals about:
-- New AI primitives and software-native interfaces (typed decisions, structured output, MCP, harnesses)
-- New research (papers, methods, results) even if obscure
-- Open-source repos and reproductions
-- Closed lab/API/CLI updates, including Grok Build CLI, TypeSafe Jev, model APIs
-- How engineers actually build with AI
+${brief}
+Do the searches then return JSON. Cover the last 14 days, not only today.`;
 
-Return JSON only.`;
-
-  const fromDate = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString().slice(0, 10);
-
-  try {
-    const res = await fetch("https://api.x.ai/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "grok-4.5",
-        input: [
-          { role: "system", content: SYSTEM },
-          { role: "user", content: user },
-        ],
-        tools: [{ type: "x_search", from_date: fromDate }],
-        max_output_tokens: 3500,
-      }),
+  if (window === "quarter") {
+    return searchX({
+      apiKey,
+      fromDate: daysAgo(90),
+      toDate: daysAgo(14),
+      searches: 2,
+      timeoutMs: 40000,
+      user: userFor("Stack-shifting AI artifacts from 14 days ago back to 3 months. Not recaps."),
     });
-
-    if (!res.ok) {
-      const fallback = await fetchViaChat(apiKey, SYSTEM, user);
-      if (fallback.items.length) return fallback;
-      return { items: [], warning: `X search error ${res.status}.` };
-    }
-
-    const body = (await res.json()) as Record<string, unknown>;
-    const text = collectText(body);
-    const urls = collectUrls(body);
-    const parsed = extractJson(text);
-    const items = itemsFromUnknown(parsed, urls).slice(0, 14);
-    if (!items.length) {
-      const fallback = await fetchViaChat(apiKey, SYSTEM, user);
-      if (fallback.items.length) return fallback;
-      return { items: [], warning: "Grok returned no X posts." };
-    }
-    return { items };
-  } catch {
-    const fallback = await fetchViaChat(apiKey, SYSTEM, user);
-    if (fallback.items.length) return fallback;
-    return { items: [], warning: "Could not run X search." };
   }
-}
 
-async function fetchViaChat(
-  apiKey: string,
-  system: string,
-  user: string,
-): Promise<{ items: RawItem[]; warning?: string }> {
-  try {
-    const res = await fetch("https://api.x.ai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "grok-4.5",
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-        search_parameters: {
-          mode: "on",
-          return_citations: true,
-          sources: [{ type: "x" }],
-        },
-        max_tokens: 2800,
-      }),
-    });
-    if (!res.ok) return { items: [] };
-    const body = (await res.json()) as Record<string, unknown>;
-    const text = collectText(body);
-    const urls = collectUrls(body);
-    const parsed = extractJson(text);
-    return { items: itemsFromUnknown(parsed, urls).slice(0, 14) };
-  } catch {
-    return { items: [] };
-  }
+  const lane = X_LANES.find((l) => l.id === (laneId as XLaneId)) ?? X_LANES[0];
+  const extra = extraVoices
+    .map((h) => h.replace(/^@/, "").trim())
+    .filter(Boolean)
+    .slice(0, 40);
+  const extraLine =
+    extra.length && lane.id === "voices"
+      ? ` Also search posts FROM these extra accounts the user follows: ${extra.map((h) => `from:${h}`).join(" OR ")}.`
+      : extra.length
+        ? ` Prefer posts from these followed accounts when relevant: ${extra.map((h) => `@${h}`).join(" ")}.`
+        : "";
+  const first = await searchX({
+    apiKey,
+    fromDate: daysAgo(lane.fromDays),
+    toDate: lane.toDays > 0 ? daysAgo(lane.toDays) : undefined,
+    searches: 2,
+    timeoutMs: 32000,
+    user: userFor(`${lane.brief}${extraLine}`),
+  });
+  if (first.items.length) return first;
+
+  const retry = await searchX({
+    apiKey,
+    fromDate: daysAgo(lane.fromDays),
+    searches: 1,
+    timeoutMs: 20000,
+    user: userFor(`${lane.brief}${extraLine} One search only. Return whatever you have.`),
+  });
+  if (retry.items.length) return retry;
+  return { items: [], warning: first.warning || retry.warning };
 }

@@ -5,6 +5,8 @@ dist
 .tanstack
 .vercel
 .grok
+!.grok/skills/
+!.grok/skills/**
 .env
 .env.*
 !.env.example

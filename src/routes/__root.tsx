@@ -1,6 +1,7 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
+import { PhoneGuard } from "@/components/pwa/phone-guard";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "Shift Radar";
@@ -9,14 +10,18 @@ export const Route = createRootRoute({
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" },
+      {
+        name: "viewport",
+        content:
+          "width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content",
+      },
       { title: APP_NAME },
       {
         name: "description",
         content:
-          "Early AI signal desk for engineers — TypeSafe scores importance on X and GitHub, even when almost nobody is talking.",
+          "AI briefing for engineers: X + GitHub, including quiet high-impact signals — so you do not have to scroll.",
       },
-      { name: "theme-color", content: "#fefefe" },
+      { name: "theme-color", content: "#ffffff" },
       { name: "mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-status-bar-style", content: "default" },
@@ -28,19 +33,22 @@ export const Route = createRootRoute({
       { rel: "stylesheet", href: appCss },
       { rel: "manifest", href: "/__grok/manifest.webmanifest" },
       { rel: "apple-touch-icon", href: "/__grok/icon-180.png" },
-      {
-        rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap",
-      },
     ],
   }),
   component: () => (
     <html lang="en" suppressHydrationWarning className="antialiased">
       <head>
         <HeadContent />
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              'try{var r=localStorage.getItem("shift-radar-desk");if(r){var t=JSON.parse(r).state;if(t&&t.theme==="dark")document.documentElement.classList.add("dark")}}catch(e){}',
+          }}
+        />
       </head>
       <body className="bg-background text-foreground">
         <PreviewHostBridge />
+        <PhoneGuard />
         <AuthProvider>
           <Outlet />
         </AuthProvider>

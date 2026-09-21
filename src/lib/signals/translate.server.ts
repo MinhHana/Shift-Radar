@@ -38,6 +38,7 @@ export async function translateSignals(signals: Signal[]): Promise<{
         ...cur,
         title: en.title || cur.title,
         text: en.text || cur.text,
+        soWhat: en.soWhat || cur.soWhat,
         translated: true,
       });
       translated += 1;
@@ -47,14 +48,20 @@ export async function translateSignals(signals: Signal[]): Promise<{
   return { signals: signals.map((s) => byId.get(s.id) ?? s), translated };
 }
 
+export async function translateOne(signal: Signal): Promise<Signal> {
+  const { signals } = await translateSignals([signal]);
+  return signals[0] ?? signal;
+}
+
 async function translateChunk(
   apiKey: string,
   chunk: Signal[],
-): Promise<Map<string, { title: string; text: string }>> {
+): Promise<Map<string, { title: string; text: string; soWhat: string }>> {
   const payload = chunk.map((s) => ({
     id: s.id,
     title: s.title,
     text: s.text.slice(0, 1800),
+    soWhat: s.soWhat,
   }));
 
   try {
@@ -70,7 +77,7 @@ async function translateChunk(
           {
             role: "system",
             content:
-              'Translate each item into English. Return ONLY JSON {"items":[{"id","title","text"}]}. Keep @handles, URLs, code fences, model and repo names. Faithful translation, not a summary. If already English, copy unchanged.',
+              'Translate each item into English. Return ONLY JSON {"items":[{"id","title","text","soWhat"}]}. Keep @handles, URLs, code fences, model and repo names. Faithful translation, not a summary. If already English, copy unchanged.',
           },
           { role: "user", content: JSON.stringify({ items: payload }) },
         ],
@@ -88,13 +95,13 @@ async function translateChunk(
       : Array.isArray(parsed)
         ? parsed
         : [];
-    const out = new Map<string, { title: string; text: string }>();
+    const out = new Map<string, { title: string; text: string; soWhat: string }>();
     for (const raw of items) {
       if (!raw || typeof raw !== "object") continue;
       const row = raw as Record<string, unknown>;
       const id = asString(row.id);
       if (!id) continue;
-      out.set(id, { title: asString(row.title), text: asString(row.text) });
+      out.set(id, { title: asString(row.title), text: asString(row.text), soWhat: asString(row.soWhat) });
     }
     return out;
   } catch {

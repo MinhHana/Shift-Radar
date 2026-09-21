@@ -1,0 +1,75 @@
+/* Fitting transitions only: tabs underline, overlay fade, key shake. */
+
+.feed-tabs {
+  position: relative;
+  touch-action: pan-x;
+}
+.feed-tabs-pill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  width: 0;
+  border-radius: 0;
+  background: var(--color-ink);
+  pointer-events: none;
+  z-index: 1;
+  transition:
+    transform var(--duration-fast) var(--ease-smooth-out),
+    width var(--duration-fast) var(--ease-smooth-out);
+}
+
+@keyframes t-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.t-overlay[data-state="open"] {
+  animation: t-fade-in var(--duration-fast) var(--ease-smooth-out);
+}
+
+.inspector-screen {
+  animation: t-fade-in var(--duration-fast) var(--ease-smooth-out);
+}
+
+.t-input.is-shaking {
+  animation: t-input-shake calc(var(--duration-micro) * 2 + 60ms * 2) linear;
+}
+@keyframes t-input-shake {
+  0% { transform: translateX(0); }
+  28.57% { transform: translateX(var(--distance-base)); }
+  57.14% { transform: translateX(calc(var(--distance-small) * -1)); }
+  78.57% { transform: translateX(var(--distance-small)); }
+  100% { transform: translateX(0); }
+}
+
+.feed-pad {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  overflow-x: hidden;
+}
+
+@keyframes t-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.t-row-in {
+  animation: t-row-in var(--duration-fast) var(--ease-smooth-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feed-tabs-pill,
+  .t-overlay,
+  .inspector-screen,
+  .t-input,
+  .t-row-in {
+    animation: none !important;
+    transition: none !important;
+  }
+}

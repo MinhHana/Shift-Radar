@@ -2,11 +2,13 @@ import {
   Ban,
   Box,
   Clock,
+  Crown,
   EyeOff,
   FlaskConical,
   Github,
   Hexagon,
   House,
+  Mic,
   Radar,
   Settings2,
   Zap,
@@ -17,6 +19,7 @@ import { useDesk } from "@/lib/signals/store";
 
 const ICONS: Record<TabId, typeof House> = {
   all: House,
+  founders: Crown,
   hidden: EyeOff,
   impact: Zap,
   new: Clock,
@@ -24,6 +27,7 @@ const ICONS: Record<TabId, typeof House> = {
   repo: Github,
   product: Box,
   kin: Hexagon,
+  voices: Mic,
   dropped: Ban,
 };
 

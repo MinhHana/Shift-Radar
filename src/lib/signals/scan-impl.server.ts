@@ -37,8 +37,7 @@ export async function executeScan(input: {
     return { ok: false, error: "TypeSafe scored nothing." };
   }
 
-  const { signals: english, translated } = await translateSignals(signals);
-  if (translated) warnings.push(`Translated ${translated} non-English items.`);
+  const { signals: english } = await translateSignals(signals);
 
   return {
     ok: true,

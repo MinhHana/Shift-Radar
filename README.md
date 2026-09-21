@@ -1,6 +1,6 @@
 # Shift Radar
 
-Early AI signal desk for engineers. Grok fetches posts from X and repos from GitHub. TypeSafe Jev scores importance — not likes — including under-discussed primitives.
+AI briefing for engineers: X + GitHub. Shipping news and quiet high-impact — Jev scores importance, not likes — so you do not have to scroll.
 
 ## Run
 

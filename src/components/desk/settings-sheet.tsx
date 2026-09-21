@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -11,6 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 import { checkTypeSafeKey } from "@/lib/signals/scan";
 import { useDesk } from "@/lib/signals/store";
+import { VOICES, normalizeHandle } from "@/lib/signals/voices";
 
 function maskKey(key: string) {
   const t = key.trim();
@@ -24,11 +27,20 @@ export function SettingsSheet() {
   const key = useDesk((s) => s.typesafeKey);
   const setKey = useDesk((s) => s.setKey);
   const armed = key.trim().length >= 8;
+  const theme = useDesk((s) => s.theme);
+  const setTheme = useDesk((s) => s.setTheme);
+  const dark = theme === "dark";
   const [draft, setDraft] = useState("");
   const [revealed, setRevealed] = useState(!armed);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [justOn, setJustOn] = useState(false);
+  const [shake, setShake] = useState(false);
+  const extraVoices = useDesk((s) => s.extraVoices);
+  const addVoice = useDesk((s) => s.addVoice);
+  const removeVoice = useDesk((s) => s.removeVoice);
+  const [voiceDraft, setVoiceDraft] = useState("");
+  const [voiceMsg, setVoiceMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -38,24 +50,51 @@ export function SettingsSheet() {
     setRevealed(!on);
     setStatus(null);
     setJustOn(false);
+    setShake(false);
   }, [open]);
 
   const showInput = !armed || revealed;
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={setOpen}
-    >
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Settings</DialogTitle>
+          <div className="flex h-11 items-center justify-between gap-3">
+            <DialogTitle>Settings</DialogTitle>
+            <DialogClose asChild>
+              <Button variant="ghost" size="icon" aria-label="Close">
+                <X />
+              </Button>
+            </DialogClose>
+          </div>
           <DialogDescription>
             TypeSafe key stays on this device, sent to the server only when you scan, never written into code.
           </DialogDescription>
         </DialogHeader>
-        <div className="flex flex-col gap-4 px-5 pb-6">
-          <div className="flex items-center justify-between gap-3">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-y-contain px-4 pb-6">
+          <button
+            type="button"
+            className="flex min-h-11 items-center justify-between gap-3 text-left"
+            onClick={() => setTheme(dark ? "light" : "dark")}
+          >
+            <p className="text-sm font-medium">Dark mode</p>
+            <div
+              className={cn(
+                "relative h-7 w-12 rounded-full transition-colors duration-200",
+                dark ? "bg-primary" : "border border-border bg-secondary",
+              )}
+              aria-hidden="true"
+            >
+              <span
+                className={cn(
+                  "absolute top-0.5 size-6 rounded-full bg-card shadow-sm transition-transform duration-200 ease-[var(--ease-smooth-out)]",
+                  dark ? "translate-x-5" : "translate-x-0.5",
+                )}
+              />
+            </div>
+          </button>
+
+          <div className="flex min-h-11 items-center justify-between gap-3">
             <p className="text-sm font-medium">TypeSafe / Jev</p>
             <div
               className={cn(
@@ -75,13 +114,13 @@ export function SettingsSheet() {
           </div>
 
           {armed && !showInput ? (
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-secondary px-3 py-3">
+            <div className="flex items-center justify-between gap-3 rounded-2xl bg-secondary px-3 py-3">
               <div className="min-w-0">
                 <p className="flex items-center gap-2 text-sm font-medium">
                   <span className="jev-on-dot size-2 shrink-0 rounded-full bg-primary" />
                   Jev on
                 </p>
-                <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">{maskKey(key)}</p>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">{maskKey(key)}</p>
               </div>
               <Button
                 variant="secondary"
@@ -104,13 +143,19 @@ export function SettingsSheet() {
                 id="ts-key"
                 type="password"
                 autoComplete="off"
+                inputMode="text"
+                enterKeyHint="done"
                 placeholder="sk-…"
                 value={draft}
-                onChange={(e) => setDraft(e.target.value)}
+                className={cn("t-input", shake && "is-shaking")}
+                onChange={(e) => {
+                  setDraft(e.target.value);
+                  setShake(false);
+                }}
               />
               <div className="flex gap-2">
                 <Button
-                  className="flex-1"
+                  className="h-11 flex-1"
                   disabled={busy || draft.trim().length < 8}
                   onClick={async () => {
                     setBusy(true);
@@ -124,9 +169,13 @@ export function SettingsSheet() {
                         setJustOn(true);
                         setStatus("Jev is on.");
                       } else {
+                        setShake(false);
+                        requestAnimationFrame(() => setShake(true));
                         setStatus(res.error);
                       }
                     } catch {
+                      setShake(false);
+                      requestAnimationFrame(() => setShake(true));
                       setStatus("Could not check the key.");
                     } finally {
                       setBusy(false);
@@ -136,7 +185,7 @@ export function SettingsSheet() {
                   {busy ? "Checking…" : "Save and check"}
                 </Button>
                 {armed ? (
-                  <Button variant="secondary" onClick={() => setRevealed(false)}>
+                  <Button variant="secondary" className="h-11" onClick={() => setRevealed(false)}>
                     Cancel
                   </Button>
                 ) : null}
@@ -147,6 +196,7 @@ export function SettingsSheet() {
           {armed ? (
             <Button
               variant="secondary"
+              className="h-11"
               onClick={() => {
                 setDraft("");
                 setKey("");
@@ -160,7 +210,59 @@ export function SettingsSheet() {
           ) : null}
 
           {status ? <p className="text-sm text-muted-foreground">{status}</p> : null}
-          <p className="text-sm leading-relaxed text-muted-foreground">
+          <div>
+            <p className="text-sm font-medium">X voices · {VOICES.length + extraVoices.length}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Add handles to follow. Scan pulls their posts into tab Voices.
+            </p>
+            <form
+              className="mt-2 flex gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const handle = normalizeHandle(voiceDraft);
+                const result = addVoice(voiceDraft);
+                if (result === "ok") {
+                  setVoiceDraft("");
+                  setVoiceMsg(`Added @${handle}.`);
+                  return;
+                }
+                if (result === "duplicate") {
+                  setVoiceMsg(`@${handle} is already in the list.`);
+                  return;
+                }
+                setVoiceMsg("Enter a valid handle.");
+              }}
+            >
+              <Input
+                value={voiceDraft}
+                onChange={(e) => setVoiceDraft(e.target.value)}
+                placeholder="@handle"
+                autoCapitalize="none"
+                autoCorrect="off"
+                className="h-11"
+              />
+              <Button type="submit" variant="secondary" className="h-11 shrink-0 px-4">
+                Add
+              </Button>
+            </form>
+            {voiceMsg ? <p className="mt-1 text-xs text-muted-foreground">{voiceMsg}</p> : null}
+            {extraVoices.length ? (
+              <ul className="mt-2 space-y-1">
+                {extraVoices.map((h) => (
+                  <li key={h} className="flex min-h-11 items-center justify-between gap-2 text-sm">
+                    <span>@{h}</span>
+                    <button type="button" className="text-muted-foreground" onClick={() => removeVoice(h)}>
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              Default · {VOICES.map((v) => `@${v.handle}`).join(" · ")}
+            </p>
+          </div>
+          <p className="break-any text-sm leading-relaxed text-muted-foreground">
             Jev scores every tweet and repo in parallel: AI signal, novelty, hidden, primitive, closed/open,
             language, problem, impact on models / coding / usage / career. Non-English posts are translated
             to English after scoring. Grok only fetches.

@@ -18,7 +18,7 @@ export function ScoreMeter({
       </div>
       <div className="h-1 overflow-hidden rounded-full bg-secondary">
         <div
-          className="h-full rounded-full bg-accent transition-[width] duration-400 ease-[var(--ease-smooth-out)]"
+          className="h-full rounded-full bg-up transition-[width] duration-[var(--duration-slow)] ease-[var(--ease-smooth-out)]"
           style={{ width: `${pct}%` }}
         />
       </div>

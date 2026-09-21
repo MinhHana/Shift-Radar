@@ -29,7 +29,7 @@ export const SIGNAL_QUESTIONS = {
   is_primitive: {
     type: "noul" as const,
     instructions:
-      "Does this introduce or substantially advance an AI primitive or interface that software can call — not merely another chatbot wrapper? Examples: typed decisions, structured output, MCP/skills, harnesses, eval loops, memory, computer-use, System One-style models.",
+      "Does this introduce or substantially advance something engineers can use as a tool — API, CLI, library, judge, router, harness — to solve a real job, not a chatbot demo?",
   },
   software_native: {
     type: "noul" as const,
@@ -111,6 +111,29 @@ export const SIGNAL_QUESTIONS = {
       other: "Other.",
     },
   },
+  shift_kind: {
+    type: "choice" as const,
+    instructions:
+      "What does this primarily do for a working engineer? Pick one. Do not pick based on hype — pick from the artifact.",
+    criteria: {
+      solves: "Fixes a concrete pain they already have.",
+      improves: "Makes an existing workflow faster, cheaper, or more reliable.",
+      changes: "Changes how they would train, code, or ship.",
+      enables: "Unlocks something they could not do before.",
+    },
+  },
+  matter_because: {
+    type: "choice" as const,
+    instructions: "Why should a software/ML engineer care this week? One reason.",
+    criteria: {
+      stack: "It moves a layer of the AI stack they may have to adopt.",
+      career: "Staying current for the job this quarter.",
+      hidden: "Under-discussed relative to likely impact — easy to miss, costly to ignore.",
+      ship: "They can put it in code this week (API, repo, CLI).",
+      model: "It changes how models are trained, evaluated, or served.",
+      coding: "It changes how they write software with AI.",
+    },
+  },
   impact_models: {
     type: "score" as const,
     instructions:
@@ -186,13 +209,13 @@ export const SIGNAL_QUESTIONS = {
   typesafe_likeness: {
     type: "score" as const,
     instructions:
-      "How similar in shape to TypeSafe AI / Jev: a cheap, software-native primitive with wide application surface (typed/probabilistic decisions, not chat)?",
+      "TypeSafe/Jev is the *example of impact*, not the target. Score how much this changes real AI tooling people use to get work done — the way TypeSafe changed decision-making in software. Clones of Jev that nobody would adopt score low. A coding agent, eval, CLI, inference stack, or method that actually changes practice scores high even if it looks nothing like TypeSafe.",
     criteria: [
-      "Nothing like TypeSafe.",
-      "Loosely related (structured output bolted on a chatbot).",
-      "Same neighborhood (typed LLM functions, judges, routers).",
-      "Same job: software calls it to decide/score/route at scale.",
-      "Directly the same category: System One / native machine decisions.",
+      "No change to how people use AI tools for real work.",
+      "A minor utility; practice stays the same.",
+      "Some teams would change a workflow if they adopted it.",
+      "Would change how many engineers use AI to solve actual jobs.",
+      "Category-level shift in the AI tools people ship with — same class of impact TypeSafe had, not a TypeSafe lookalike.",
     ],
   },
   buildability: {
