@@ -113,3 +113,50 @@ export const explainTrend = createServerFn({ method: "POST" })
     return { text };
   });
 
+export const startScanJob = createServerFn({ method: "POST" })
+  .validator(
+    (data: { typesafeKey: string; focus?: string; extraVoices?: string[] }) => {
+      if (!data || typeof data.typesafeKey !== "string") {
+        throw new Error("TypeSafe API key required.");
+      }
+      return {
+        typesafeKey: data.typesafeKey.trim(),
+        focus: typeof data.focus === "string" ? data.focus.trim() : "",
+        extraVoices: Array.isArray(data.extraVoices)
+          ? data.extraVoices.filter((h): h is string => typeof h === "string").slice(0, 40)
+          : [],
+      };
+    },
+  )
+  .handler(async ({ data }): Promise<{ jobId: string }> => {
+    const { startScanJob: start } = await import("./scan-job.server.ts");
+    const jobId = start({
+      typesafeKey: data.typesafeKey,
+      focus: data.focus || undefined,
+      extraVoices: data.extraVoices,
+    });
+    return { jobId };
+  });
+
+export const pollScanJob = createServerFn({ method: "POST" })
+  .validator((data: { jobId: string; cursor?: number }) => ({
+    jobId: typeof data?.jobId === "string" ? data.jobId : "",
+    cursor: typeof data?.cursor === "number" ? Math.max(0, data.cursor) : 0,
+  }))
+  .handler(async ({ data }) => {
+    const { getScanJob } = await import("./scan-job.server.ts");
+    const job = getScanJob(data.jobId);
+    if (!job) return { ok: false as const, error: "Scan job expired." };
+    return {
+      ok: true as const,
+      status: job.status,
+      liveStatus: job.liveStatus,
+      liveCurrent: job.liveCurrent,
+      signals: job.signals.slice(data.cursor),
+      cursor: job.signals.length,
+      stats: job.stats,
+      warnings: job.warnings,
+      trends: job.trends,
+      error: job.error,
+    };
+  });

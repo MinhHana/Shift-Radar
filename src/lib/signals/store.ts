@@ -34,6 +34,7 @@ type DeskState = {
   trendNotes: Record<string, string>;
   explainingTrendId: string | null;
   extraVoices: string[];
+  scanJobId: string | null;
   setKey: (key: string) => void;
   setFocus: (focus: string) => void;
   setTab: (tab: TabId) => void;
@@ -60,6 +61,7 @@ type DeskState = {
   setExplainingTrend: (id: string | null) => void;
   addVoice: (handle: string) => "ok" | "duplicate" | "invalid";
   removeVoice: (handle: string) => void;
+  setScanJobId: (id: string | null) => void;
 };
 
 export const useDesk = create<DeskState>()(
@@ -88,6 +90,7 @@ export const useDesk = create<DeskState>()(
       trendNotes: {},
       explainingTrendId: null,
       extraVoices: [],
+      scanJobId: null,
       setKey: (typesafeKey) => set({ typesafeKey }),
       setFocus: (focus) => set({ focus }),
       setTab: (tab) => set({ tab, selectedId: null, activeTrendId: null }),
@@ -105,6 +108,7 @@ export const useDesk = create<DeskState>()(
           tab: "all",
           stats: { xFetched: 0, githubFetched: 0, scored: 0, kept: 0 },
           scanGen: s.scanGen + 1,
+          scanJobId: null,
         })),
       setLive: (liveStatus, liveCurrent) =>
         set((s) => ({
@@ -146,6 +150,7 @@ export const useDesk = create<DeskState>()(
           isScanning: false,
           liveCurrent: null,
           lastScanAt: new Date().toISOString(),
+          scanJobId: null,
         }),
       applyScan: ({ signals, stats, warnings }) =>
         set({
@@ -179,6 +184,7 @@ export const useDesk = create<DeskState>()(
         set((s) => ({
           extraVoices: s.extraVoices.filter((h) => h.toLowerCase() !== handle.replace(/^@/, "").toLowerCase()),
         })),
+      setScanJobId: (scanJobId) => set({ scanJobId }),
     }),
     {
       name: "shift-radar-desk",
@@ -195,6 +201,7 @@ export const useDesk = create<DeskState>()(
         activeTrendId: s.activeTrendId,
         trendNotes: s.trendNotes,
         extraVoices: s.extraVoices,
+        scanJobId: s.scanJobId,
         scanGen: s.scanGen,
         firstSeen: s.firstSeen,
       }),

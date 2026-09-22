@@ -11,6 +11,7 @@ import { JevLogo } from "@/components/desk/jev-logo";
 import { SettingsSheet } from "@/components/desk/settings-sheet";
 import { SignalCard } from "@/components/desk/signal-card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { resumeIfNeeded } from "@/lib/signals/live-scan";
 import { useDesk, visibleSignals } from "@/lib/signals/store";
 
 function isScanNoise(w: string) {
@@ -58,6 +59,13 @@ export function AppShell() {
   const [showTop, setShowTop] = useState(false);
 
   const feedAnchorRef = useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => {
+    const go = () => void resumeIfNeeded();
+    const persist = useDesk.persist;
+    if (persist.hasHydrated()) go();
+    return persist.onFinishHydration(go);
+  }, []);
 
   useEffect(() => {
     if (activeTrendId) {
