@@ -16,18 +16,44 @@ export type ScanJobSnap = {
   warnings: string[];
   trends: Trend[];
   error?: string;
+  finishedAt?: string;
 };
 
 const jobs = new Map<string, ScanJobSnap>();
+const THREE_HOURS = 3 * 60 * 60 * 1000;
 
-function job(id: string): ScanJobSnap {
-  const j = jobs.get(id);
-  if (!j) throw new Error("Scan job missing.");
-  return j;
+type Creds = { typesafeKey: string; focus?: string; extraVoices?: string[] };
+
+let creds: Creds | null = null;
+let latest: ScanJobSnap | null = null;
+let lastFinishedAt = 0;
+let scheduler: ReturnType<typeof setInterval> | null = null;
+
+function runningJob(): ScanJobSnap | undefined {
+  return [...jobs.values()].find((j) => j.status === "running");
+}
+
+function ensureScheduler() {
+  if (scheduler) return;
+  scheduler = setInterval(() => {
+    if (!creds) return;
+    if (runningJob()) return;
+    if (Date.now() - lastFinishedAt < THREE_HOURS) return;
+    startScanJob(creds);
+  }, 60 * 1000);
 }
 
 export function getScanJob(id: string): ScanJobSnap | null {
   return jobs.get(id) ?? null;
+}
+
+export function getScanDesk(): { runningId: string | null; latest: ScanJobSnap | null; nextAutoAt: number | null } {
+  const running = runningJob();
+  return {
+    runningId: running?.id ?? null,
+    latest,
+    nextAutoAt: lastFinishedAt ? lastFinishedAt + THREE_HOURS : null,
+  };
 }
 
 export function startScanJob(input: {
@@ -35,6 +61,17 @@ export function startScanJob(input: {
   focus?: string;
   extraVoices?: string[];
 }): string {
+  const existing = runningJob();
+  if (existing) return existing.id;
+
+  creds = {
+    typesafeKey: input.typesafeKey.trim(),
+    focus: input.focus,
+    extraVoices: input.extraVoices,
+  };
+  if (!lastFinishedAt) lastFinishedAt = Date.now();
+  ensureScheduler();
+
   const id = crypto.randomUUID();
   jobs.set(id, {
     id,
@@ -46,13 +83,21 @@ export function startScanJob(input: {
     warnings: [],
     trends: [],
   });
-  void runJob(id, input).catch((err) => {
+  void runJob(id, creds).catch((err) => {
     const j = jobs.get(id);
     if (!j || j.status !== "running") return;
     j.status = "error";
     j.error = err instanceof Error ? err.message : "Scan failed.";
+    j.finishedAt = new Date().toISOString();
+    lastFinishedAt = Date.now();
   });
   return id;
+}
+
+function job(id: string): ScanJobSnap {
+  const j = jobs.get(id);
+  if (!j) throw new Error("Scan job missing.");
+  return j;
 }
 
 async function scoreOneSafe(key: string, item: Parameters<typeof scoreItem>[1]): Promise<Signal | null> {
@@ -80,6 +125,8 @@ async function runJob(
   if (!probe.ok) {
     j.status = "error";
     j.error = probe.error;
+    j.finishedAt = new Date().toISOString();
+    lastFinishedAt = Date.now();
     return;
   }
 
@@ -189,13 +236,15 @@ async function runJob(
   if (!j.stats.scored && !j.signals.length) {
     j.status = "error";
     j.error = j.warnings[0] || "No signals this scan.";
+    j.finishedAt = new Date().toISOString();
+    lastFinishedAt = Date.now();
     return;
   }
 
   const top = [...j.signals]
     .filter((s) => s.kept)
     .sort((a, b) => b.composite - a.composite)
-    .slice(0, 28);
+    .slice(0, 40);
   if (top.length) {
     j.liveStatus = "Tóm tắt xu hướng…";
     j.liveCurrent = null;
@@ -219,6 +268,9 @@ async function runJob(
   j.liveStatus = `Done · ${j.stats.kept} kept`;
   j.liveCurrent = null;
   j.status = "done";
+  j.finishedAt = new Date().toISOString();
+  lastFinishedAt = Date.now();
+  latest = j;
 
   setTimeout(() => jobs.delete(id), 30 * 60 * 1000);
 }

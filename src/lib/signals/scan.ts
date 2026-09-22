@@ -88,7 +88,7 @@ export const writeBriefing = createServerFn({ method: "POST" })
         problem?: string;
       }>;
     }) => ({
-      items: Array.isArray(data?.items) ? data.items.slice(0, 28) : [],
+      items: Array.isArray(data?.items) ? data.items.slice(0, 40) : [],
     }),
   )
   .handler(async ({ data }): Promise<{ trends: import("./types").Trend[] }> => {
@@ -160,3 +160,24 @@ export const pollScanJob = createServerFn({ method: "POST" })
       error: job.error,
     };
   });
+
+export const getScanDesk = createServerFn({ method: "POST" }).handler(async () => {
+  const { getScanDesk: desk } = await import("./scan-job.server.ts");
+  const snap = desk();
+  return {
+    runningId: snap.runningId,
+    nextAutoAt: snap.nextAutoAt,
+    latest: snap.latest
+      ? {
+          id: snap.latest.id,
+          status: snap.latest.status,
+          liveStatus: snap.latest.liveStatus,
+          signals: snap.latest.signals,
+          stats: snap.latest.stats,
+          warnings: snap.latest.warnings,
+          trends: snap.latest.trends,
+          finishedAt: snap.latest.finishedAt,
+        }
+      : null,
+  };
+});

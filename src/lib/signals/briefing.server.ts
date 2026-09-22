@@ -39,7 +39,7 @@ export function fallbackTrends(items: Item[]): Trend[] {
       const sb = b[1].reduce((n, x) => n + x.composite, 0);
       return sb - sa;
     })
-    .slice(0, 10)
+    .slice(0, 15)
     .map(([key, list], i) => ({
       id: `trend-${i}-${key}`,
       title: PROBLEM_VI[key] || PROBLEM_VI.other,
@@ -53,7 +53,7 @@ export async function writeVietnameseTrends(items: Item[]): Promise<Trend[]> {
   if (!apiKey || items.length < 2) return fallback;
 
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), 14000);
+  const timer = setTimeout(() => ac.abort(), 20000);
   try {
     const res = await fetch("https://api.x.ai/v1/chat/completions", {
       method: "POST",
@@ -68,12 +68,12 @@ export async function writeVietnameseTrends(items: Item[]): Promise<Trend[]> {
           {
             role: "system",
             content:
-              'Gom các bài thành tối đa 10 XU HƯỚNG (không phải 10 bài). Tiêu đề tiếng Việt, tối đa 18 từ, cho kỹ sư: xu hướng gì + vì sao quan trọng. Trả JSON {"trends":[{"title":"...","ids":["id1","id2"]}]}. ids phải lấy từ danh sách. Một bài có thể thuộc 1 xu hướng. Bỏ trend chỉ có meme.',
+              'Gom các bài thành đúng 15 XU HƯỚNG (không phải 15 bài). Tiêu đề tiếng Việt, tối đa 18 từ, cho kỹ sư: xu hướng gì + vì sao quan trọng. Trả JSON {"trends":[{"title":"...","ids":["id1","id2"]}]}. ids phải lấy từ danh sách. Một bài có thể thuộc 1 xu hướng. Bỏ trend chỉ có meme.',
           },
           {
             role: "user",
             content: JSON.stringify(
-              items.slice(0, 28).map((it) => ({
+              items.slice(0, 40).map((it) => ({
                 id: it.id,
                 jev: Math.round(it.composite * 100),
                 problem: it.problem,
@@ -83,7 +83,7 @@ export async function writeVietnameseTrends(items: Item[]): Promise<Trend[]> {
             ),
           },
         ],
-        max_tokens: 900,
+        max_tokens: 1400,
       }),
     });
     if (!res.ok) return fallback;
@@ -103,7 +103,7 @@ export async function writeVietnameseTrends(items: Item[]): Promise<Trend[]> {
         : [];
       if (!title || !ids.length) continue;
       trends.push({ id: `trend-${trends.length}`, title, signalIds: [...new Set(ids)] });
-      if (trends.length >= 10) break;
+      if (trends.length >= 15) break;
     }
     return trends.length ? trends : fallback;
   } catch {

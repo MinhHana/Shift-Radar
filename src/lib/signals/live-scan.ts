@@ -1,8 +1,9 @@
-import { pollScanJob, startScanJob } from "@/lib/signals/scan";
+import { getScanDesk, pollScanJob, startScanJob } from "@/lib/signals/scan";
 import { useDesk } from "@/lib/signals/store";
 
 let generation = 0;
 let wake: WakeLockSentinel | null = null;
+const THREE_HOURS = 3 * 60 * 60 * 1000;
 
 async function holdWake() {
   try {
@@ -56,8 +57,16 @@ async function pollUntilDone(jobId: string, my: number) {
   }
 }
 
-export async function runLiveScan() {
+async function attachJob(jobId: string) {
   const my = ++generation;
+  const desk = useDesk.getState();
+  if (!desk.isScanning) desk.setScanning(true);
+  desk.setScanJobId(jobId);
+  await holdWake();
+  await pollUntilDone(jobId, my);
+}
+
+export async function runLiveScan() {
   const desk = useDesk.getState();
   const key = desk.typesafeKey.trim();
   const focus = desk.focus;
@@ -69,6 +78,7 @@ export async function runLiveScan() {
   }
 
   desk.beginLiveScan();
+  const my = ++generation;
   await holdWake();
 
   try {
@@ -79,7 +89,6 @@ export async function runLiveScan() {
     desk.setScanJobId(jobId);
     await pollUntilDone(jobId, my);
   } catch (err) {
-    if (my !== generation) return;
     useDesk.getState().setError(err instanceof Error ? err.message : "Scan failed.");
     dropWake();
   }
@@ -87,18 +96,42 @@ export async function runLiveScan() {
 
 export async function resumeIfNeeded() {
   const desk = useDesk.getState();
-  if (!desk.scanJobId || desk.isScanning) return;
-  const my = ++generation;
-  desk.setScanning(true);
-  desk.setLive("Resuming scan…");
-  await holdWake();
-  await pollUntilDone(desk.scanJobId, my);
+  try {
+    const remote = await getScanDesk();
+    if (remote.runningId) {
+      if (desk.isScanning && desk.scanJobId === remote.runningId) return;
+      await attachJob(remote.runningId);
+      return;
+    }
+    if (remote.latest?.status === "done" && remote.latest.signals.length) {
+      const finished = remote.latest.finishedAt ? +new Date(remote.latest.finishedAt) : 0;
+      const local = desk.lastScanAt ? +new Date(desk.lastScanAt) : 0;
+      if (finished > local) {
+        desk.applyScan({
+          signals: remote.latest.signals,
+          stats: remote.latest.stats,
+          warnings: remote.latest.warnings,
+        });
+        if (remote.latest.trends.length) desk.setTrends(remote.latest.trends);
+      }
+    }
+  } catch {
+    /* stay on local desk */
+  }
+
+  const now = useDesk.getState();
+  if (now.isScanning || now.scanJobId) return;
+  const last = now.lastScanAt ? +new Date(now.lastScanAt) : 0;
+  if (now.typesafeKey.trim().length >= 8 && last && Date.now() - last >= THREE_HOURS) {
+    await runLiveScan();
+  }
 }
 
 if (typeof document !== "undefined") {
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && useDesk.getState().isScanning) {
-      void holdWake();
+    if (document.visibilityState === "visible") {
+      if (useDesk.getState().isScanning) void holdWake();
+      else void resumeIfNeeded();
     }
   });
 }

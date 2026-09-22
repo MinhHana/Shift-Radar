@@ -66,6 +66,7 @@ export function Composer() {
         <p className="mt-2 px-1 text-xs tabular-nums text-muted-foreground">
           X {stats.xFetched} · GH {stats.githubFetched} · Jev {stats.scored}
           {stats.kept ? ` · kept ${stats.kept}` : ""}
+          {" · auto 3h"}
         </p>
       ) : null}
     </div>

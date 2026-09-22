@@ -263,6 +263,10 @@ export function SettingsSheet() {
             </p>
           </div>
           <p className="break-any text-sm leading-relaxed text-muted-foreground">
+            After the first Scan, the server rescans every 3 hours and writes a 15-line Vietnamese briefing —
+            even if this phone is closed. Tap Scan to run one now; it keeps going until that briefing lands.
+          </p>
+          <p className="break-any text-sm leading-relaxed text-muted-foreground">
             Jev scores every tweet and repo in parallel: AI signal, novelty, hidden, primitive, closed/open,
             language, problem, impact on models / coding / usage / career. Non-English posts are translated
             to English after scoring. Grok only fetches.

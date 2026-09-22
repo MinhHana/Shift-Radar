@@ -43,9 +43,9 @@ export function Briefing() {
   if (trends.length) {
     return (
       <div className="px-4 pb-3">
-        <p className="text-xs font-medium text-jev">10 xu hướng</p>
+        <p className="text-xs font-medium text-jev">15 xu hướng</p>
         <ol className="mt-1.5 space-y-1">
-          {trends.slice(0, 10).map((trend, i) => {
+          {trends.slice(0, 15).map((trend, i) => {
             const on = trend.id === activeTrendId;
             const note = notes[trend.id];
             const loading = explainingId === trend.id;
@@ -108,7 +108,7 @@ export function Briefing() {
     <div className="px-4 pb-3">
       <p className="text-xs font-medium text-jev">Lần này</p>
       <ul className="mt-1.5 space-y-1.5">
-        {briefing.slice(0, 10).map((line) => (
+        {briefing.slice(0, 15).map((line) => (
           <li key={line} className="flex gap-2 text-sm leading-snug text-jev">
             <span className="mt-2 size-1 shrink-0 rounded-full bg-jev" />
             <span className="min-w-0 break-any">{line}</span>
