@@ -195,7 +195,6 @@ export async function scoreItem(apiKey: string, item: RawItem): Promise<Signal> 
     : "career";
 
   const fallback = buildSoWhat({ shiftKind, matterBecause, problem, audience, scores });
-  const soWhat = (await writeSoWhat(item, fallback, shiftKind, matterBecause)) || fallback;
 
   return {
     ...item,
@@ -208,11 +207,18 @@ export async function scoreItem(apiKey: string, item: RawItem): Promise<Signal> 
     scores,
     composite: compositeFrom(scores),
     reason: buildReason({ origin, audience, problem, category, scores }),
-    soWhat,
+    soWhat: fallback,
+    soWhatSettled: false,
     kept: shouldKeep(scores),
     translated: false,
     sourceLang: choice(answers, "source_lang", "en"),
   };
+}
+
+export async function polishSoWhat(signal: Signal): Promise<Signal> {
+  if (!signal.kept || signal.soWhatSettled !== false) return signal;
+  const line = await writeSoWhat(signal, signal.soWhat, signal.shiftKind, signal.matterBecause);
+  return { ...signal, soWhat: line || signal.soWhat, soWhatSettled: true };
 }
 
 async function writeSoWhat(

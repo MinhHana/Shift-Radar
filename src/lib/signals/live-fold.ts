@@ -89,8 +89,8 @@ function stampArrival(state: LiveDeskSlice, incoming: Signal[]) {
     if (firstSeen[signal.id] === undefined) {
       if (firstSeen === state.firstSeen) firstSeen = { ...state.firstSeen };
       firstSeen[signal.id] = born;
+      if (signal.kept) lastArrivedId = signal.id;
     }
-    if (signal.kept) lastArrivedId = signal.id;
   }
   return { firstSeen, lastArrivedId };
 }

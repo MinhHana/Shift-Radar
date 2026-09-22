@@ -117,6 +117,7 @@ describe("foldLiveChunk", () => {
     assert.equal(next.signals[1], updated);
     assert.equal(next.signals.length, 2);
     assert.equal(next.stats, state.stats);
+    assert.equal(next.lastArrivedId, null);
   });
 });
 

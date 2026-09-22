@@ -95,6 +95,7 @@ export type Signal = {
   composite: number;
   reason: string;
   soWhat: string;
+  soWhatSettled?: boolean;
   kept: boolean;
   translated: boolean;
   sourceLang?: string;

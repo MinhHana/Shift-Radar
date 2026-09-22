@@ -1,8 +1,9 @@
 import { fetchGithubSignals } from "./github.server";
 import { writeVietnameseTrends } from "./briefing.server";
+import { afterJev } from "./after-jev";
 import { readCachedScore, writeCachedScore } from "./score-cache.server";
 import { needsTranslation, translateOne } from "./translate.server";
-import { probeTypeSafe, scoreItem } from "./typesafe.server";
+import { polishSoWhat, probeTypeSafe, scoreItem } from "./typesafe.server";
 import type { Signal, SourceKind, Trend } from "./types";
 import { fetchXSignals } from "./x.server";
 import { X_LANES } from "./x-lanes";
@@ -15,6 +16,7 @@ export type ScanJobSnap = {
   liveStatus: string;
   liveCurrent: { author: string; title: string; source: SourceKind; avatarUrl?: string } | null;
   signals: Signal[];
+  edits: Signal[];
   stats: { xFetched: number; githubFetched: number; scored: number; kept: number };
   warnings: string[];
   trends: Trend[];
@@ -82,6 +84,7 @@ export function startScanJob(input: {
     liveStatus: "Pulling sources…",
     liveCurrent: null,
     signals: [],
+    edits: [],
     stats: { xFetched: 0, githubFetched: 0, scored: 0, kept: 0 },
     warnings: [],
     trends: [],
@@ -107,16 +110,21 @@ function warnOnce(j: ScanJobSnap, warning: string) {
   if (!j.warnings.includes(warning)) j.warnings.push(warning);
 }
 
-async function scoreOneSafe(key: string, item: Parameters<typeof scoreItem>[1]): Promise<Signal | null> {
+async function scoreOneSafe(
+  key: string,
+  item: Parameters<typeof scoreItem>[1],
+): Promise<{ signal: Signal; polish: boolean } | null> {
   const cached = readCachedScore(item);
-  if (cached) return cached;
+  if (cached) return { signal: cached, polish: false };
   try {
     let signal = await scoreItem(key, item);
-    if (needsTranslation(`${signal.title}\n${signal.text}`, signal.scores.isEnglish)) {
-      signal = await translateOne(signal);
-    }
-    writeCachedScore(item, signal);
-    return signal;
+    const plan = afterJev(
+      signal,
+      needsTranslation(`${signal.title}\n${signal.text}`, signal.scores.isEnglish),
+    );
+    if (plan.translate) signal = await translateOne(signal);
+    if (!plan.polish) writeCachedScore(item, signal);
+    return { signal, polish: plan.polish };
   } catch {
     return null;
   }
@@ -144,6 +152,57 @@ async function runJob(
   const queue: Parameters<typeof scoreItem>[1][] = [];
   let inFlight = 0;
   let idle: (() => void) | null = null;
+  const polishQueue: Array<{ item: Parameters<typeof scoreItem>[1]; signal: Signal }> = [];
+  let polishFlight = 0;
+  let polishIdle: (() => void) | null = null;
+
+  function notePolishIdle() {
+    if (polishFlight === 0 && polishQueue.length === 0) polishIdle?.();
+  }
+
+  function reviseSignal(signal: Signal) {
+    const idx = j.signals.findIndex((s) => s.id === signal.id);
+    if (idx >= 0) j.signals[idx] = signal;
+    else j.signals.push(signal);
+    j.edits.push(signal);
+  }
+
+  function pumpPolish() {
+    while (polishFlight < SCORE_SLOTS && polishQueue.length) {
+      const next = polishQueue.shift();
+      if (!next) break;
+      polishFlight += 1;
+      void polishSoWhat(next.signal)
+        .then((polished) => {
+          writeCachedScore(next.item, polished);
+          if (polished.soWhat !== next.signal.soWhat) reviseSignal(polished);
+        })
+        .catch(() => {
+          writeCachedScore(next.item, next.signal);
+        })
+        .finally(() => {
+          polishFlight -= 1;
+          pumpPolish();
+          notePolishIdle();
+        });
+    }
+    notePolishIdle();
+  }
+
+  function enqueuePolish(item: Parameters<typeof scoreItem>[1], signal: Signal) {
+    polishQueue.push({ item, signal });
+    pumpPolish();
+  }
+
+  async function waitForPolish() {
+    if (polishFlight === 0 && polishQueue.length === 0) return;
+    await new Promise<void>((resolve) => {
+      polishIdle = () => {
+        if (polishFlight === 0 && polishQueue.length === 0) resolve();
+      };
+      pumpPolish();
+    });
+  }
 
   function noteIdle() {
     if (inFlight === 0 && queue.length === 0) idle?.();
@@ -186,11 +245,14 @@ async function runJob(
         source: item.source,
         avatarUrl: item.avatarUrl,
       };
-      void scoreOneSafe(key, item).then((signal) => {
+      void scoreOneSafe(key, item).then((result) => {
         inFlight -= 1;
         try {
-          if (!signal) warnOnce(j, "Jev skipped one item.");
-          else commitSignal(signal);
+          if (!result) warnOnce(j, "Jev skipped one item.");
+          else {
+            commitSignal(result.signal);
+            if (result.polish) enqueuePolish(item, result.signal);
+          }
           pump();
         } finally {
           noteIdle();
@@ -269,6 +331,7 @@ async function runJob(
       pump();
     });
   }
+  await waitForPolish();
 
   if (!j.stats.scored && !j.signals.length) {
     j.status = "error";
