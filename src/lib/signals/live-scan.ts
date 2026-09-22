@@ -1,3 +1,4 @@
+import { sameTrends } from "@/lib/signals/live-fold";
 import { getScanDesk, pollScanJob, startScanJob } from "@/lib/signals/scan";
 import { useDesk } from "@/lib/signals/store";
 
@@ -32,12 +33,15 @@ async function pollUntilDone(jobId: string, my: number) {
         return;
       }
       const desk = useDesk.getState();
-      desk.setLive(snap.liveStatus, snap.liveCurrent);
-      for (const warning of snap.warnings) desk.addWarning(warning);
-      for (const signal of snap.signals) desk.pushSignal(signal);
+      desk.applyLiveChunk({
+        liveStatus: snap.liveStatus,
+        liveCurrent: snap.liveCurrent,
+        signals: snap.signals,
+        warnings: snap.warnings,
+        stats: snap.stats,
+      });
       cursor = snap.cursor;
-      if (snap.stats) useDesk.setState({ stats: snap.stats });
-      if (snap.trends.length) desk.setTrends(snap.trends);
+      if (snap.trends.length && !sameTrends(desk.trends, snap.trends)) desk.setTrends(snap.trends);
 
       if (snap.status === "done") {
         desk.finishLiveScan();

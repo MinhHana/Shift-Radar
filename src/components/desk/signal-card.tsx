@@ -1,12 +1,16 @@
+import { memo } from "react";
 import { formatDistanceToNowStrict } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Avatar } from "@/components/desk/avatar";
 import { PostImages } from "@/components/desk/post-images";
+import { useDesk } from "@/lib/signals/store";
 import type { Signal } from "@/lib/signals/types";
+
+const compactFmt = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
 
 function compact(n?: number) {
   if (n === undefined) return null;
-  return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(n);
+  return compactFmt.format(n);
 }
 
 function when(iso: string) {
@@ -22,8 +26,7 @@ function body(signal: Signal) {
   return `${cut.slice(0, 900).trim()}…`;
 }
 
-function newAge(signal: Signal, scanGen: number, firstSeen: Record<string, number>) {
-  const born = firstSeen[signal.id];
+function newAge(born: number | undefined, scanGen: number) {
   if (born === undefined) return null;
   return scanGen - born;
 }
@@ -34,25 +37,25 @@ const NEW_TONE: Record<number, string> = {
   2: "bg-secondary text-muted-foreground",
 };
 
-export function SignalCard({
+export const SignalCard = memo(function SignalCard({
   signal,
   selected,
   fresh,
-  scanGen,
-  firstSeen,
-  onSelect,
+  scanGen = 0,
+  born,
 }: {
   signal: Signal;
   selected: boolean;
   fresh?: boolean;
   scanGen?: number;
-  firstSeen?: Record<string, number>;
-  onSelect: () => void;
+  born?: number;
 }) {
+  const select = useDesk((s) => s.select);
+  const onSelect = () => select(signal.id);
   const handle = signal.author.startsWith("@") ? signal.author : `@${signal.author}`;
   const name = signal.source === "github" ? signal.title : handle.replace(/^@/, "");
   const jev = Math.round(signal.composite * 100);
-  const age = newAge(signal, scanGen ?? 0, firstSeen ?? {});
+  const age = newAge(born, scanGen);
   const newClass = age === 0 || age === 1 || age === 2 ? NEW_TONE[age] : null;
   const stats = [
     signal.source === "x" && compact(signal.stats.replies) ? `${compact(signal.stats.replies)} replies` : null,
@@ -76,7 +79,7 @@ export function SignalCard({
         }
       }}
       className={cn(
-        "w-full border-b border-border px-4 py-3 text-left",
+        "signal-row w-full border-b border-border px-4 py-3 text-left",
         fresh && "t-row-in",
         selected && "bg-secondary",
         !signal.kept && "opacity-50",
@@ -118,4 +121,4 @@ export function SignalCard({
       </div>
     </article>
   );
-}
+});

@@ -1,4 +1,5 @@
 import { fetchGithubSignals } from "./github.server";
+import { writeCachedScore } from "./score-cache.server";
 import { probeTypeSafe, scoreAll } from "./typesafe.server";
 import { translateSignals } from "./translate.server";
 import { fetchXSignals } from "./x.server";
@@ -24,6 +25,7 @@ export async function executeScan(input: {
   if (gh.warning) warnings.push(gh.warning);
 
   const merged = [...x.items, ...gh.items];
+  const rawById = new Map(merged.map((item) => [item.id, item]));
   if (!merged.length) {
     return {
       ok: false,
@@ -38,6 +40,10 @@ export async function executeScan(input: {
   }
 
   const { signals: english } = await translateSignals(signals);
+  for (const signal of english) {
+    const raw = rawById.get(signal.id);
+    if (raw) writeCachedScore(raw, signal);
+  }
 
   return {
     ok: true,

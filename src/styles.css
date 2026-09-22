@@ -131,7 +131,12 @@
   }
 
   p {
-    text-wrap: pretty;
+    text-wrap: wrap;
+  }
+
+  .signal-row {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 220px;
   }
 
   button:not(:disabled),

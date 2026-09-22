@@ -1,10 +1,13 @@
 import { fetchGithubSignals } from "./github.server";
 import { writeVietnameseTrends } from "./briefing.server";
+import { readCachedScore, writeCachedScore } from "./score-cache.server";
 import { needsTranslation, translateOne } from "./translate.server";
 import { probeTypeSafe, scoreItem } from "./typesafe.server";
 import type { Signal, SourceKind, Trend } from "./types";
 import { fetchXSignals } from "./x.server";
 import { X_LANES } from "./x-lanes";
+
+const SCORE_SLOTS = 4;
 
 export type ScanJobSnap = {
   id: string;
@@ -100,12 +103,19 @@ function job(id: string): ScanJobSnap {
   return j;
 }
 
+function warnOnce(j: ScanJobSnap, warning: string) {
+  if (!j.warnings.includes(warning)) j.warnings.push(warning);
+}
+
 async function scoreOneSafe(key: string, item: Parameters<typeof scoreItem>[1]): Promise<Signal | null> {
+  const cached = readCachedScore(item);
+  if (cached) return cached;
   try {
     let signal = await scoreItem(key, item);
     if (needsTranslation(`${signal.title}\n${signal.text}`, signal.scores.isEnglish)) {
       signal = await translateOne(signal);
     }
+    writeCachedScore(item, signal);
     return signal;
   } catch {
     return null;
@@ -132,45 +142,65 @@ async function runJob(
 
   const seen = new Set<string>();
   const queue: Parameters<typeof scoreItem>[1][] = [];
-  let scoring = false;
+  let inFlight = 0;
+  let idle: (() => void) | null = null;
 
-  async function drain() {
-    if (scoring) return;
-    scoring = true;
-    try {
-      while (queue.length) {
-        const item = queue.shift();
-        if (!item) break;
-        j.liveStatus = `Jev scoring ${item.author || item.title}`;
-        j.liveCurrent = {
-          author: item.author,
-          title: item.title,
-          source: item.source,
-          avatarUrl: item.avatarUrl,
-        };
-        const signal = await scoreOneSafe(key, item);
-        if (!signal) {
-          j.warnings.push("Jev skipped one item.");
-          continue;
-        }
-        j.signals = [...j.signals.filter((s) => s.id !== signal.id), signal];
-        j.stats = {
-          ...j.stats,
-          scored: j.stats.scored + 1,
-          kept: j.signals.filter((s) => s.kept).length,
-        };
-        const ticker = signal.author.replace(/^@/, "").slice(0, 8);
-        j.liveStatus = signal.kept
-          ? `Kept ${(signal.composite * 100).toFixed(0)} · ${ticker}`
-          : `Dropped · ${ticker}`;
-      }
-    } finally {
-      scoring = false;
-      if (queue.length) await drain();
-    }
+  function noteIdle() {
+    if (inFlight === 0 && queue.length === 0) idle?.();
   }
 
-  async function ingest(
+  function commitSignal(signal: Signal) {
+    const idx = j.signals.findIndex((s) => s.id === signal.id);
+    const prevKept = idx >= 0 && j.signals[idx].kept ? 1 : 0;
+    if (idx >= 0) j.signals[idx] = signal;
+    else j.signals.push(signal);
+    j.stats = {
+      ...j.stats,
+      scored: j.stats.scored + (idx >= 0 ? 0 : 1),
+      kept: j.stats.kept - prevKept + (signal.kept ? 1 : 0),
+    };
+    const ticker = signal.author.replace(/^@/, "").slice(0, 8);
+    j.liveStatus = signal.kept ? `Kept ${(signal.composite * 100).toFixed(0)} · ${ticker}` : `Dropped · ${ticker}`;
+    j.liveCurrent = {
+      author: signal.author,
+      title: signal.title,
+      source: signal.source,
+      avatarUrl: signal.avatarUrl,
+    };
+  }
+
+  function pump() {
+    while (inFlight < SCORE_SLOTS && queue.length) {
+      const item = queue.shift();
+      if (!item) break;
+      const cached = readCachedScore(item);
+      if (cached) {
+        commitSignal(cached);
+        continue;
+      }
+      inFlight += 1;
+      j.liveStatus = `Jev scoring ${item.author || item.title}`;
+      j.liveCurrent = {
+        author: item.author,
+        title: item.title,
+        source: item.source,
+        avatarUrl: item.avatarUrl,
+      };
+      void scoreOneSafe(key, item).then((signal) => {
+        inFlight -= 1;
+        try {
+          if (!signal) warnOnce(j, "Jev skipped one item.");
+          else commitSignal(signal);
+          pump();
+        } finally {
+          noteIdle();
+        }
+      });
+    }
+    noteIdle();
+  }
+
+  function ingest(
     source: "x" | "github",
     items: Parameters<typeof scoreItem>[1][],
     warning?: string,
@@ -185,9 +215,9 @@ async function runJob(
       xFetched: j.stats.xFetched + (source === "x" ? fresh.length : 0),
       githubFetched: j.stats.githubFetched + (source === "github" ? fresh.length : 0),
     };
-    if (warning) j.warnings.push(warning);
+    if (warning) warnOnce(j, warning);
     queue.push(...fresh);
-    await drain();
+    pump();
   }
 
   j.liveStatus = "Briefing X + GitHub…";
@@ -196,7 +226,7 @@ async function runJob(
     try {
       const r = await fetchGithubSignals(focus);
       j.liveStatus = `GitHub ${r.items.length} · Jev`;
-      await ingest("github", r.items, r.warning);
+      ingest("github", r.items, r.warning);
     } catch {
       j.warnings.push("GitHub pull failed.");
     }
@@ -214,7 +244,7 @@ async function runJob(
             const r = await fetchXSignals(focus, "recent", lane.id, extraVoices);
             if (r.items.length) {
               j.liveStatus = `X ${lane.label} · ${r.items.length}`;
-              await ingest("x", r.items, r.warning ? `X ${lane.label}: ${r.warning}` : undefined);
+              ingest("x", r.items, r.warning ? `X ${lane.label}: ${r.warning}` : undefined);
               lastErr = "";
               break;
             }
@@ -224,14 +254,21 @@ async function runJob(
             if (attempt === 0) await new Promise((ok) => setTimeout(ok, 800));
           }
         }
-        if (lastErr) j.warnings.push(`X ${lane.label}: ${lastErr}`);
+        if (lastErr) warnOnce(j, `X ${lane.label}: ${lastErr}`);
       }
     }
     await Promise.all([worker(), worker()]);
   })();
 
   await Promise.all([githubPull, xPull]);
-  await drain();
+  if (inFlight > 0 || queue.length > 0) {
+    await new Promise<void>((resolve) => {
+      idle = () => {
+        if (inFlight === 0 && queue.length === 0) resolve();
+      };
+      pump();
+    });
+  }
 
   if (!j.stats.scored && !j.signals.length) {
     j.status = "error";

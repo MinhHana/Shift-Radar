@@ -1,4 +1,5 @@
 import { SIGNAL_QUESTIONS } from "./questions";
+import { readCachedScore } from "./score-cache.server";
 import { buildReason, buildSoWhat, compositeFrom, shouldKeep } from "./reason";
 import type {
   Audience,
@@ -273,8 +274,13 @@ export async function scoreAll(apiKey: string, items: RawItem[]): Promise<{
 }> {
   const signals: Signal[] = [];
   let failures = 0;
-  const queue = [...items];
-  const workers = Math.min(6, Math.max(1, queue.length));
+  const queue: RawItem[] = [];
+  for (const item of items) {
+    const hit = readCachedScore(item);
+    if (hit) signals.push(hit);
+    else queue.push(item);
+  }
+  const workers = queue.length ? Math.min(6, queue.length) : 0;
 
   async function worker() {
     while (queue.length) {

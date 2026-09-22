@@ -40,6 +40,7 @@ export function Avatar({
       width={size === "sm" ? 32 : 40}
       height={size === "sm" ? 32 : 40}
       loading="lazy"
+      decoding="async"
       referrerPolicy="no-referrer"
       onError={() => setFailed(true)}
       className={cn("shrink-0 rounded-full bg-secondary object-cover", box)}

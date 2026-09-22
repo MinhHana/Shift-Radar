@@ -71,11 +71,8 @@ export async function fetchGithubSignals(focus?: string): Promise<{ items: RawIt
   const seen = new Set<string>();
   let rateLimited = false;
 
-  for (const [i, q] of queries.entries()) {
-    const repos = await search(q, i === 2 ? "updated" : "stars");
-    if (!repos.length) {
-      // Distinguish empty vs failure only loosely
-    }
+  const batches = await Promise.all(queries.map((q, i) => search(q, i === 2 ? "updated" : "stars")));
+  for (const repos of batches) {
     for (const repo of repos) {
       if (!repo.full_name || seen.has(repo.full_name)) continue;
       seen.add(repo.full_name);
@@ -98,11 +95,16 @@ export async function fetchGithubSignals(focus?: string): Promise<{ items: RawIt
   }
 
   const picked = found.slice(0, 12);
+  const excerpts = await Promise.all(
+    picked.map((repo, i) => {
+      const thin = !(repo.description && repo.description.length > 40);
+      return thin && i < 3 ? readmeExcerpt(repo.full_name) : Promise.resolve("");
+    }),
+  );
   const items: RawItem[] = [];
 
-  for (const repo of picked) {
-    const thin = !(repo.description && repo.description.length > 40);
-    const excerpt = thin && items.length < 3 ? await readmeExcerpt(repo.full_name) : "";
+  for (const [i, repo] of picked.entries()) {
+    const excerpt = excerpts[i] ?? "";
     const topics = (repo.topics ?? []).join(", ");
     const desc = repo.description || "No description.";
     items.push({
