@@ -1,14 +1,11 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
+import { createDeskStorage } from "./desk-storage";
+import { foldLiveChunk, type LiveChunk, type LiveCurrent, type ScanStats } from "./live-fold";
 import type { Signal, SourceKind, TabId, Trend } from "./types";
 import { isFollowedHandle, isFounderVoice, isWatchedVoice, normalizeHandle } from "./voices";
 
-export type LiveCurrent = {
-  author: string;
-  title: string;
-  source: SourceKind;
-  avatarUrl?: string;
-};
+export type { LiveCurrent };
 
 type DeskState = {
   typesafeKey: string;
@@ -17,7 +14,7 @@ type DeskState = {
   selectedId: string | null;
   signals: Signal[];
   lastScanAt: string | null;
-  stats: { xFetched: number; githubFetched: number; scored: number; kept: number } | null;
+  stats: ScanStats | null;
   warnings: string[];
   isScanning: boolean;
   error: string | null;
@@ -46,9 +43,10 @@ type DeskState = {
   bumpFetched: (source: SourceKind, count: number) => void;
   addWarning: (warning: string) => void;
   finishLiveScan: () => void;
+  applyLiveChunk: (chunk: LiveChunk) => void;
   applyScan: (payload: {
     signals: Signal[];
-    stats: { xFetched: number; githubFetched: number; scored: number; kept: number };
+    stats: ScanStats;
     warnings: string[];
   }) => void;
   setScanning: (v: boolean) => void;
@@ -117,19 +115,38 @@ export const useDesk = create<DeskState>()(
         })),
       pushSignal: (signal) =>
         set((s) => {
-          const signals = [...s.signals.filter((x) => x.id !== signal.id), signal];
           const stats = s.stats ?? { xFetched: 0, githubFetched: 0, scored: 0, kept: 0 };
+          const folded = foldLiveChunk(s, {
+            liveStatus: s.liveStatus,
+            liveCurrent: s.liveCurrent,
+            signals: [signal],
+            warnings: [],
+            stats: null,
+          });
+          const signals = folded?.signals ?? [...s.signals.filter((x) => x.id !== signal.id), signal];
           return {
             signals,
-            lastArrivedId: signal.kept ? signal.id : s.lastArrivedId,
-            firstSeen: s.firstSeen[signal.id]
-              ? s.firstSeen
-              : { ...s.firstSeen, [signal.id]: s.scanGen || 1 },
+            lastArrivedId: folded?.lastArrivedId ?? (signal.kept ? signal.id : s.lastArrivedId),
+            firstSeen: folded?.firstSeen ?? s.firstSeen,
             stats: {
               ...stats,
               scored: stats.scored + 1,
               kept: stats.kept + (signal.kept ? 1 : 0),
             },
+          };
+        }),
+      applyLiveChunk: (chunk) =>
+        set((s) => {
+          const next = foldLiveChunk(s, chunk);
+          if (!next) return s;
+          return {
+            signals: next.signals,
+            firstSeen: next.firstSeen,
+            lastArrivedId: next.lastArrivedId,
+            warnings: next.warnings,
+            stats: next.stats,
+            liveStatus: next.liveStatus,
+            liveCurrent: next.liveCurrent,
           };
         }),
       bumpFetched: (source, count) =>
@@ -169,7 +186,12 @@ export const useDesk = create<DeskState>()(
       setError: (error) => set({ error, isScanning: false, liveCurrent: null }),
       setTheme: (theme) => set({ theme }),
       setBriefing: (briefing) => set({ briefing }),
-      setTrends: (trends) => set({ trends, briefing: trends.map((t) => t.title), activeTrendId: null }),
+      setTrends: (trends) =>
+        set((s) => ({
+          trends,
+          briefing: trends.map((t) => t.title),
+          activeTrendId: trends.some((t) => t.id === s.activeTrendId) ? s.activeTrendId : null,
+        })),
       setActiveTrend: (activeTrendId) => set({ activeTrendId, tab: "all" }),
       setTrendNote: (id, text) => set((s) => ({ trendNotes: { ...s.trendNotes, [id]: text } })),
       setExplainingTrend: (explainingTrendId) => set({ explainingTrendId }),
@@ -188,6 +210,7 @@ export const useDesk = create<DeskState>()(
     }),
     {
       name: "shift-radar-desk",
+      storage: createJSONStorage(() => createDeskStorage()),
       partialize: (s) => ({
         typesafeKey: s.typesafeKey,
         focus: s.focus,

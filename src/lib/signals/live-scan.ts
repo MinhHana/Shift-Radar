@@ -1,3 +1,4 @@
+import { sameTrends } from "@/lib/signals/live-fold";
 import { getScanDesk, pollScanJob, startScanJob } from "@/lib/signals/scan";
 import { useDesk } from "@/lib/signals/store";
 
@@ -22,9 +23,10 @@ function dropWake() {
 
 async function pollUntilDone(jobId: string, my: number) {
   let cursor = 0;
+  let editCursor = 0;
   while (my === generation) {
     try {
-      const snap = await pollScanJob({ data: { jobId, cursor } });
+      const snap = await pollScanJob({ data: { jobId, cursor, editCursor } });
       if (my !== generation) return;
       if (!snap.ok) {
         useDesk.getState().setError(snap.error);
@@ -32,12 +34,16 @@ async function pollUntilDone(jobId: string, my: number) {
         return;
       }
       const desk = useDesk.getState();
-      desk.setLive(snap.liveStatus, snap.liveCurrent);
-      for (const warning of snap.warnings) desk.addWarning(warning);
-      for (const signal of snap.signals) desk.pushSignal(signal);
+      desk.applyLiveChunk({
+        liveStatus: snap.liveStatus,
+        liveCurrent: snap.liveCurrent,
+        signals: [...snap.signals, ...(snap.edits ?? [])],
+        warnings: snap.warnings,
+        stats: snap.stats,
+      });
       cursor = snap.cursor;
-      if (snap.stats) useDesk.setState({ stats: snap.stats });
-      if (snap.trends.length) desk.setTrends(snap.trends);
+      editCursor = snap.editCursor ?? editCursor;
+      if (snap.trends.length && !sameTrends(desk.trends, snap.trends)) desk.setTrends(snap.trends);
 
       if (snap.status === "done") {
         desk.finishLiveScan();

@@ -1,8 +1,37 @@
 import { fetchGithubSignals } from "./github.server";
-import { probeTypeSafe, scoreAll } from "./typesafe.server";
-import { translateSignals } from "./translate.server";
+import { writeCachedScore } from "./score-cache.server";
+import { afterJev } from "./after-jev";
+import { polishSoWhat, probeTypeSafe, scoreAll } from "./typesafe.server";
+import { needsTranslation, translateOne } from "./translate.server";
 import { fetchXSignals } from "./x.server";
-import type { ScanError, ScanResult } from "./types";
+import type { ScanError, ScanResult, Signal } from "./types";
+
+async function settleKept(signals: Signal[]): Promise<Signal[]> {
+  const pending = signals.filter((signal) => {
+    const plan = afterJev(signal, needsTranslation(`${signal.title}\n${signal.text}`, signal.scores.isEnglish));
+    return plan.translate || plan.polish;
+  });
+  const done = new Map<string, Signal>();
+  const workers = pending.length ? Math.min(4, pending.length) : 0;
+
+  async function worker() {
+    while (pending.length) {
+      const signal = pending.shift();
+      if (!signal) return;
+      const plan = afterJev(
+        signal,
+        needsTranslation(`${signal.title}\n${signal.text}`, signal.scores.isEnglish),
+      );
+      let next = signal;
+      if (plan.translate) next = await translateOne(next);
+      if (plan.polish) next = await polishSoWhat(next);
+      done.set(signal.id, next);
+    }
+  }
+
+  await Promise.all(Array.from({ length: workers }, () => worker()));
+  return signals.map((signal) => done.get(signal.id) ?? signal);
+}
 
 export async function executeScan(input: {
   typesafeKey: string;
@@ -24,6 +53,7 @@ export async function executeScan(input: {
   if (gh.warning) warnings.push(gh.warning);
 
   const merged = [...x.items, ...gh.items];
+  const rawById = new Map(merged.map((item) => [item.id, item]));
   if (!merged.length) {
     return {
       ok: false,
@@ -37,16 +67,20 @@ export async function executeScan(input: {
     return { ok: false, error: "TypeSafe scored nothing." };
   }
 
-  const { signals: english } = await translateSignals(signals);
+  const ready = await settleKept(signals);
+  for (const signal of ready) {
+    const raw = rawById.get(signal.id);
+    if (raw) writeCachedScore(raw, signal);
+  }
 
   return {
     ok: true,
-    signals: english,
+    signals: ready,
     stats: {
       xFetched: x.items.length,
       githubFetched: gh.items.length,
       scored,
-      kept: english.filter((s) => s.kept).length,
+      kept: ready.filter((s) => s.kept).length,
     },
     warnings,
   };

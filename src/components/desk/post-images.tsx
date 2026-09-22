@@ -24,6 +24,8 @@ export function PostImages({
           src={src}
           alt=""
           loading="lazy"
+          decoding="async"
+          fetchPriority="low"
           referrerPolicy="no-referrer"
           draggable={false}
           className={cn(

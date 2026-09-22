@@ -139,9 +139,10 @@ export const startScanJob = createServerFn({ method: "POST" })
   });
 
 export const pollScanJob = createServerFn({ method: "POST" })
-  .validator((data: { jobId: string; cursor?: number }) => ({
+  .validator((data: { jobId: string; cursor?: number; editCursor?: number }) => ({
     jobId: typeof data?.jobId === "string" ? data.jobId : "",
     cursor: typeof data?.cursor === "number" ? Math.max(0, data.cursor) : 0,
+    editCursor: typeof data?.editCursor === "number" ? Math.max(0, data.editCursor) : 0,
   }))
   .handler(async ({ data }) => {
     const { getScanJob } = await import("./scan-job.server.ts");
@@ -154,6 +155,8 @@ export const pollScanJob = createServerFn({ method: "POST" })
       liveCurrent: job.liveCurrent,
       signals: job.signals.slice(data.cursor),
       cursor: job.signals.length,
+      edits: (job.edits ?? []).slice(data.editCursor),
+      editCursor: (job.edits ?? []).length,
       stats: job.stats,
       warnings: job.warnings,
       trends: job.trends,

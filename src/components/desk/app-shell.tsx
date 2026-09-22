@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState, useEffect } from "react";
+import { memo, useLayoutEffect, useMemo, useRef, useState, useEffect } from "react";
 import { ChevronUp, Radar } from "lucide-react";
 import { Avatar } from "@/components/desk/avatar";
 import { Briefing } from "@/components/desk/briefing";
@@ -13,6 +13,32 @@ import { SignalCard } from "@/components/desk/signal-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { resumeIfNeeded } from "@/lib/signals/live-scan";
 import { useDesk, visibleSignals } from "@/lib/signals/store";
+import type { Signal } from "@/lib/signals/types";
+
+const SignalFeed = memo(function SignalFeed({
+  list,
+  selectedId,
+  lastArrivedId,
+  scanGen,
+  firstSeen,
+}: {
+  list: Signal[];
+  selectedId: string | null;
+  lastArrivedId: string | null;
+  scanGen: number;
+  firstSeen: Record<string, number>;
+}) {
+  return list.map((signal) => (
+    <SignalCard
+      key={signal.id}
+      signal={signal}
+      selected={signal.id === selectedId}
+      fresh={signal.id === lastArrivedId}
+      scanGen={scanGen}
+      born={firstSeen[signal.id]}
+    />
+  ));
+});
 
 function isScanNoise(w: string) {
   return /translated \d+ non-english/i.test(w);
@@ -138,17 +164,13 @@ export function AppShell() {
                 "Feed"
               )}
             </p>
-            {list.map((signal) => (
-              <SignalCard
-                key={signal.id}
-                signal={signal}
-                selected={signal.id === selectedId}
-                fresh={signal.id === lastArrivedId}
-                scanGen={scanGen}
-                firstSeen={firstSeen}
-                onSelect={() => select(signal.id)}
-              />
-            ))}
+            <SignalFeed
+              list={list}
+              selectedId={selectedId}
+              lastArrivedId={lastArrivedId}
+              scanGen={scanGen}
+              firstSeen={firstSeen}
+            />
             {scanning && liveCurrent ? (
               <div className="jev-score-row flex gap-3 border-b border-border px-4 py-3">
                 <span className="relative shrink-0">
